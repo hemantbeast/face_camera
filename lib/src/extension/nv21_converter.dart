@@ -3,52 +3,54 @@ import 'dart:typed_data';
 import 'package:camera/camera.dart';
 
 extension Nv21Converter on CameraImage {
-  Uint8List getNv21Uint8List() {
+  Uint8List convertYUV420ToNV21() {
     final width = this.width;
     final height = this.height;
 
+    // Planes from CameraImage
     final yPlane = planes[0];
     final uPlane = planes[1];
     final vPlane = planes[2];
 
+    // Buffers from Y, U, and V planes
     final yBuffer = yPlane.bytes;
     final uBuffer = uPlane.bytes;
     final vBuffer = vPlane.bytes;
 
-    final numPixels = (width * height * 1.5).toInt();
-    final nv21 = List<int>.filled(numPixels, 0);
+    // Total number of pixels in NV21 format
+    final numPixels = width * height + (width * height ~/ 2);
+    final nv21 = Uint8List(numPixels);
 
-    // Full size Y channel and quarter size U+V channels.
+    // Y (Luma) plane metadata
     int idY = 0;
-    int idUV = width * height;
+    int idUV = width * height; // Start UV after Y plane
     final uvWidth = width ~/ 2;
     final uvHeight = height ~/ 2;
-    // Copy Y & UV channel.
-    // NV21 format is expected to have YYYYVU packaging.
-    // The U/V planes are guaranteed to have the same row stride and pixel stride.
-    // getRowStride analogue??
-    final uvRowStride = uPlane.bytesPerRow;
-    // getPixelStride analogue
-    final uvPixelStride = uPlane.bytesPerPixel ?? 0;
+
+    // Strides and pixel strides for Y and UV planes
     final yRowStride = yPlane.bytesPerRow;
-    final yPixelStride = yPlane.bytesPerPixel ?? 0;
+    final yPixelStride = yPlane.bytesPerPixel ?? 1;
+    final uvRowStride = uPlane.bytesPerRow;
+    final uvPixelStride = uPlane.bytesPerPixel ?? 2;
 
+    // Copy Y (Luma) channel
     for (int y = 0; y < height; ++y) {
-      final uvOffset = y * uvRowStride;
       final yOffset = y * yRowStride;
-
       for (int x = 0; x < width; ++x) {
         nv21[idY++] = yBuffer[yOffset + x * yPixelStride];
-
-        if (y < uvHeight && x < uvWidth) {
-          final bufferIndex = uvOffset + (x * uvPixelStride);
-          //V channel
-          nv21[idUV++] = vBuffer[bufferIndex];
-          //V channel
-          nv21[idUV++] = uBuffer[bufferIndex];
-        }
       }
     }
-    return Uint8List.fromList(nv21);
+
+    // Copy UV (Chroma) channels in NV21 format (YYYYVU interleaved)
+    for (int y = 0; y < uvHeight; ++y) {
+      final uvOffset = y * uvRowStride;
+      for (int x = 0; x < uvWidth; ++x) {
+        final bufferIndex = uvOffset + (x * uvPixelStride);
+        nv21[idUV++] = vBuffer[bufferIndex]; // V channel
+        nv21[idUV++] = uBuffer[bufferIndex]; // U channel
+      }
+    }
+
+    return nv21;
   }
 }
