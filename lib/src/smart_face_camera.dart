@@ -132,7 +132,13 @@ class _SmartFaceCameraState extends State<SmartFaceCamera> with WidgetsBindingOb
                         child: Stack(
                           fit: StackFit.expand,
                           children: <Widget>[
-                            _cameraDisplayWidget(value),
+                            _CameraDisplayWidget(
+                              state: value,
+                              controller: widget.controller,
+                              message: widget.message,
+                              messageStyle: widget.messageStyle,
+                              messageBuilder: widget.messageBuilder,
+                            ),
 
                             // Indicator builder or custom painter
                             if (widget.indicatorBuilder != null) ...[
@@ -183,13 +189,31 @@ class _SmartFaceCameraState extends State<SmartFaceCamera> with WidgetsBindingOb
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (widget.showFlashControl) ...[_flashControlWidget(value)],
+                      if (widget.showFlashControl) ...[
+                        _FlashControlWidget(
+                          state: value,
+                          controller: widget.controller,
+                          flashControlBuilder: widget.flashControlBuilder,
+                          iconColor: iconColor,
+                        ),
+                      ],
                       if (widget.showCaptureControl) ...[
                         const SizedBox(width: 15),
-                        _captureControlWidget(value),
+                        _CaptureControlWidget(
+                          state: value,
+                          controller: widget.controller,
+                          disableCapture: _disableCapture,
+                          captureControlBuilder: widget.captureControlBuilder,
+                        ),
                         const SizedBox(width: 15),
                       ],
-                      if (widget.showCameraLensControl) ...[_lensControlWidget()],
+                      if (widget.showCameraLensControl) ...[
+                        _LensControlWidget(
+                          controller: widget.controller,
+                          lensControlIcon: widget.lensControlIcon,
+                          iconColor: iconColor,
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -201,37 +225,64 @@ class _SmartFaceCameraState extends State<SmartFaceCamera> with WidgetsBindingOb
     );
   }
 
-  /// Render camera.
-  Widget _cameraDisplayWidget(FaceCameraState value) {
-    final CameraController? cameraController = value.cameraController;
+  /// Determines when to disable the capture control button.
+  bool get _disableCapture => widget.autoDisableCaptureControl && widget.controller.value.detectedFace?.face == null;
+
+  /// Determines the camera controls color.
+  Color? get iconColor => widget.controller.enableControls ? null : Theme.of(context).disabledColor;
+}
+
+/// Render camera.
+class _CameraDisplayWidget extends StatelessWidget {
+  const _CameraDisplayWidget({
+    required this.state,
+    required this.controller,
+    this.message,
+    this.messageStyle,
+    this.messageBuilder,
+  });
+
+  final FaceCameraState state;
+
+  final FaceCameraController controller;
+
+  final String? message;
+
+  final TextStyle? messageStyle;
+
+  final MessageBuilder? messageBuilder;
+
+  @override
+  Widget build(BuildContext context) {
+    final CameraController? cameraController = state.cameraController;
 
     if (cameraController != null && cameraController.value.isInitialized) {
       final mirror = cameraController.value.description.lensDirection == CameraLensDirection.front ? pi : 0;
 
       final builder = Builder(
         builder: (context) {
-          if (widget.messageBuilder != null) {
-            final messageBuilder = widget.messageBuilder!.call(context, value.detectedFace);
+          if (messageBuilder != null) {
+            final messageBuilder = this.messageBuilder!.call(context, state.detectedFace);
 
             if (Platform.isAndroid) {
-              return _transformWidget(mirror.toDouble(), messageBuilder);
+              return _TransformWidget(value: mirror.toDouble(), child: messageBuilder);
             } else {
               return messageBuilder;
             }
           }
 
-          if (widget.message != null) {
+          if (message != null) {
             final msgWidget = Padding(
               padding: const EdgeInsets.symmetric(horizontal: 55, vertical: 15),
               child: Text(
-                widget.message!,
+                message!,
                 textAlign: TextAlign.center,
-                style: widget.messageStyle,
+                style: messageStyle,
               ),
             );
 
             if (Platform.isAndroid) {
-              return _transformWidget(mirror.toDouble(), msgWidget);
+              return _TransformWidget(value: mirror.toDouble(), child: msgWidget);
             } else {
               return msgWidget;
             }
@@ -242,9 +293,9 @@ class _SmartFaceCameraState extends State<SmartFaceCamera> with WidgetsBindingOb
       );
 
       if (Platform.isAndroid) {
-        return _transformWidget(
-          mirror.toDouble(),
-          CameraPreview(cameraController, child: builder),
+        return _TransformWidget(
+          value: mirror.toDouble(),
+          child: CameraPreview(cameraController, child: builder),
         );
       } else {
         return CameraPreview(cameraController, child: builder);
@@ -252,41 +303,80 @@ class _SmartFaceCameraState extends State<SmartFaceCamera> with WidgetsBindingOb
     }
     return const SizedBox.shrink();
   }
+}
 
-  Widget _transformWidget(double value, Widget child) {
+class _TransformWidget extends StatelessWidget {
+  const _TransformWidget({required this.value, required this.child});
+
+  final double value;
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
     return Transform(
       alignment: Alignment.center,
       transform: Matrix4.rotationY(value),
       child: child,
     );
   }
+}
 
-  /// Determines when to disable the capture control button.
-  bool get _disableCapture => widget.autoDisableCaptureControl && widget.controller.value.detectedFace?.face == null;
+/// Display the control buttons to take pictures.
+class _CaptureControlWidget extends StatelessWidget {
+  const _CaptureControlWidget({
+    required this.state,
+    required this.controller,
+    this.disableCapture = false,
+    this.captureControlBuilder,
+  });
 
-  /// Determines the camera controls color.
-  Color? get iconColor => widget.controller.enableControls ? null : Theme.of(context).disabledColor;
+  final FaceCameraState state;
 
-  /// Display the control buttons to take pictures.
-  Widget _captureControlWidget(FaceCameraState value) {
+  final FaceCameraController controller;
+
+  final bool disableCapture;
+
+  final CaptureControlBuilder? captureControlBuilder;
+
+  @override
+  Widget build(BuildContext context) {
     return IconButton(
-      icon: widget.captureControlBuilder?.call(context, value.detectedFace) ??
+      icon: captureControlBuilder?.call(context, state.detectedFace) ??
           CircleAvatar(
             radius: 35,
-            foregroundColor: widget.controller.enableControls && !_disableCapture ? null : Theme.of(context).disabledColor,
+            foregroundColor: controller.enableControls && !disableCapture ? null : Theme.of(context).disabledColor,
             child: const Padding(
               padding: EdgeInsets.all(8.0),
               child: Icon(Icons.camera_alt, size: 35),
             ),
           ),
-      onPressed: widget.controller.enableControls && !_disableCapture ? widget.controller.captureImage : null,
+      onPressed: controller.enableControls && !disableCapture ? controller.captureImage : null,
     );
   }
+}
 
-  /// Display the control buttons to switch between flash modes.
-  Widget _flashControlWidget(FaceCameraState value) {
-    final availableFlashMode = value.availableFlashMode;
-    final currentFlashMode = value.currentFlashMode;
+/// Display the control buttons to switch between flash modes.
+class _FlashControlWidget extends StatelessWidget {
+  const _FlashControlWidget({
+    required this.state,
+    required this.controller,
+    this.flashControlBuilder,
+    this.iconColor,
+  });
+
+  final FaceCameraState state;
+
+  final FaceCameraController controller;
+
+  final FlashControlBuilder? flashControlBuilder;
+
+  final Color? iconColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final availableFlashMode = state.availableFlashMode;
+    final currentFlashMode = state.currentFlashMode;
     final icon = availableFlashMode[currentFlashMode] == CameraFlashMode.always
         ? Icons.flash_on
         : availableFlashMode[currentFlashMode] == CameraFlashMode.off
@@ -294,7 +384,7 @@ class _SmartFaceCameraState extends State<SmartFaceCamera> with WidgetsBindingOb
             : Icons.flash_auto;
 
     return IconButton(
-      icon: widget.flashControlBuilder?.call(context, availableFlashMode[currentFlashMode]) ??
+      icon: flashControlBuilder?.call(context, availableFlashMode[currentFlashMode]) ??
           CircleAvatar(
             radius: 25,
             foregroundColor: iconColor,
@@ -303,14 +393,25 @@ class _SmartFaceCameraState extends State<SmartFaceCamera> with WidgetsBindingOb
               child: Icon(icon, size: 25),
             ),
           ),
-      onPressed: widget.controller.enableControls ? widget.controller.changeFlashMode : null,
+      onPressed: controller.enableControls ? controller.changeFlashMode : null,
     );
   }
+}
 
-  /// Display the control buttons to switch between camera lens.
-  Widget _lensControlWidget() {
+/// Display the control buttons to switch between camera lens.
+class _LensControlWidget extends StatelessWidget {
+  const _LensControlWidget({required this.controller, this.iconColor, this.lensControlIcon});
+
+  final FaceCameraController controller;
+
+  final Widget? lensControlIcon;
+
+  final Color? iconColor;
+
+  @override
+  Widget build(BuildContext context) {
     return IconButton(
-      icon: widget.lensControlIcon ??
+      icon: lensControlIcon ??
           CircleAvatar(
             radius: 25,
             foregroundColor: iconColor,
@@ -319,7 +420,7 @@ class _SmartFaceCameraState extends State<SmartFaceCamera> with WidgetsBindingOb
               child: Icon(Icons.switch_camera_sharp, size: 25),
             ),
           ),
-      onPressed: widget.controller.enableControls ? widget.controller.changeCameraLens : null,
+      onPressed: controller.enableControls ? controller.changeCameraLens : null,
     );
   }
 }
